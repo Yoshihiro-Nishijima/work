@@ -277,11 +277,11 @@ export const DefectHistogramItem = ({
 										valueFormatter: (value) => formatChartCount(value),
 									}))
 						}
-						tooltip={{
-							trigger: "item",
-							slots: { itemContent: HistogramTooltip },
+						tooltip={{ trigger: "item" }}
+						slots={{
+							bar: SelectableBar,
+							itemContent: HistogramTooltip,
 						}}
-						slots={{ bar: SelectableBar }}
 						height={280}
 						sx={{ minWidth: 320, width: "100%" }}
 					/>

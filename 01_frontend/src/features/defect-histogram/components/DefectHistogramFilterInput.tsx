@@ -4,9 +4,10 @@ import {
 	type GridFilterInputValueProps,
 } from "@mui/x-data-grid-pro";
 import type { GridFilterItem } from "@mui/x-data-grid-pro";
+import { getDefectHistogramFilterSnapshot } from "../utils/filterSnapshot";
 
 type Props = GridFilterInputValueProps & {
-	onOpenHistogram: (field: string, item: GridFilterItem) => void;
+	onOpenHistogram: (field: string, item?: GridFilterItem) => void;
 };
 
 export const DefectHistogramFilterInput = ({
@@ -15,10 +16,6 @@ export const DefectHistogramFilterInput = ({
 	apiRef,
 	...inputProps
 }: Props): JSX.Element => {
-	const isComplete =
-		(item.value != null && item.value !== "") ||
-		item.operator === "isEmpty" ||
-		item.operator === "isNotEmpty";
 	return (
 		<Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
 			<Box sx={{ minWidth: 0 }}>
@@ -26,8 +23,12 @@ export const DefectHistogramFilterInput = ({
 			</Box>
 			<Button
 				variant="text"
-				onClick={() => onOpenHistogram(item.field, item)}
-				disabled={!isComplete}
+				onClick={() =>
+					onOpenHistogram(
+						item.field,
+						getDefectHistogramFilterSnapshot(item),
+					)
+				}
 				sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
 			>
 				HISTOGRAM

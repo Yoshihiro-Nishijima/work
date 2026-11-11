@@ -5,8 +5,8 @@ import {
 import { useCallback, useMemo } from "react";
 
 import { DefectHistogramFilterInput } from "../components/DefectHistogramFilterInput";
-import { DEFECT_HISTOGRAM_FIELD_REGISTRY } from "../registry";
 import { isDefectHistogramField } from "../types";
+import { DEFECT_HISTOGRAM_FIELD_REGISTRY } from "../types/registry";
 import { useDefectHistogram } from "./useDefectHistogram";
 
 export const useDefectHistogramFilterOperators = (

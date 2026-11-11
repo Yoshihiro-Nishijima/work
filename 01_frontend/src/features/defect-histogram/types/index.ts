@@ -4,7 +4,7 @@ import {
 	DEFECT_HISTOGRAM_FIELDS,
 	type DefectHistogramField,
 	isDefectHistogramField,
-} from "../registry";
+} from "./registry";
 
 export {
 	DEFECT_HISTOGRAM_FIELDS,

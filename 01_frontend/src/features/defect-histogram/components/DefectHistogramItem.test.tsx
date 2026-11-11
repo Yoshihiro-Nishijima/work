@@ -15,6 +15,7 @@ const createItem = (
 ): DefectHistogramItemState => ({
 	histogramId: "histogram-1",
 	field: "width",
+	fieldLabel: "Width",
 	status: "idle",
 	rangeStatus: "idle",
 	result: null,
@@ -97,8 +98,8 @@ describe("DefectHistogramItem states", () => {
 				edges: [0, 5, 10],
 				counts: [4, 2],
 				categories: [
-					{ categoryNo: 1, counts: [3, 0] },
 					{ categoryNo: 2, counts: [1, 2] },
+					{ categoryNo: 1, counts: [3, 0] },
 				],
 				matchedCount: 6,
 				numericValueCount: 6,
@@ -114,6 +115,7 @@ describe("DefectHistogramItem states", () => {
 			/>,
 		);
 
+		expect(screen.getByText("Width")).toBeTruthy();
 		const bars = container.querySelectorAll(".MuiBarElement-root");
 		expect(bars.length).toBe(4);
 		expect(getComputedStyle(bars[0]).fill).toBe("#1976d2");

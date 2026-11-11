@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -63,7 +65,10 @@ def api_client():
     engine.dispose()
 
 
-def test_histogram_api_applies_only_the_filter_item(api_client: TestClient):
+def test_histogram_api_applies_only_the_filter_item(
+    api_client: TestClient, caplog: pytest.LogCaptureFixture
+):
+    caplog.set_level(logging.INFO)
     response = api_client.post(
         "/results/demo/defect-histogram",
         json={
@@ -78,6 +83,29 @@ def test_histogram_api_applies_only_the_filter_item(api_client: TestClient):
     assert payload["numericValueCount"] == 2
     assert sum(payload["counts"]) == 2
     assert payload["categories"]
+    assert "resultName=demo" in caplog.text
+    assert "field=width" in caplog.text
+    assert "matchedCount=2" in caplog.text
+    assert "numericValueCount=2" in caplog.text
+    assert "filterCount=1" in caplog.text
+    assert "value" not in caplog.text
+
+
+def test_histogram_api_logs_zero_result_reason(
+    api_client: TestClient, caplog: pytest.LogCaptureFixture
+):
+    caplog.set_level(logging.INFO)
+    response = api_client.post(
+        "/results/demo/defect-histogram",
+        json={
+            "field": "width",
+            "filter": {"field": "width", "operator": ">", "value": 100},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matchedCount"] == 0
+    assert "zeroReason=filter_no_match" in caplog.text
 
 
 def test_histogram_range_api_and_validation(api_client: TestClient):
@@ -100,3 +128,33 @@ def test_histogram_range_api_and_validation(api_client: TestClient):
     assert invalid_field.status_code == 422
     assert invalid_range.status_code == 422
     assert "sql" not in invalid_field.text.lower()
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/results/demo/defect-histogram",
+            {
+                "field": "gray",
+                "filter": {"field": "width", "operator": ">", "value": 1},
+            },
+        ),
+        (
+            "/results/demo/defect-histogram-range",
+            {
+                "field": "gray",
+                "filter": {"field": "width", "operator": ">", "value": 1},
+                "lower": 0,
+                "upper": 2,
+            },
+        ),
+    ],
+)
+def test_api_rejects_filter_field_mismatch(
+    api_client: TestClient, path: str, payload: dict[str, object]
+):
+    response = api_client.post(path, json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "filter field must match histogram field"

@@ -70,6 +70,13 @@ export const DefectHistogramItem = ({
 			: (result?.dataMax ?? 1);
 	const step = getHistogramStep(sliderMin, sliderMax);
 	const range = item.range ?? [sliderMin, sliderMax];
+	const categories = result
+		? [...result.categories].sort(
+				(left, right) =>
+					getCategory(left.categoryNo).order -
+					getCategory(right.categoryNo).order,
+			)
+		: [];
 	const logCategoryCounts =
 		item.logYAxis && (result?.categories.length ?? 0) > 0;
 	const chartData = result
@@ -96,7 +103,7 @@ export const DefectHistogramItem = ({
 					{formatHistogramValue(lower, step)} ～{" "}
 					{formatHistogramValue(upper, step)}
 				</Typography>
-				{result.categories.map((category) => (
+				{categories.map((category) => (
 					<Typography
 						key={category.categoryNo}
 						variant="caption"
@@ -254,7 +261,7 @@ export const DefectHistogramItem = ({
 					gap: 1,
 				}}
 			>
-				<Typography fontWeight="bold">{item.field}</Typography>
+				<Typography fontWeight="bold">{item.fieldLabel}</Typography>
 				<Button
 					size="small"
 					color="error"
@@ -296,7 +303,7 @@ export const DefectHistogramItem = ({
 												Math.round(value ?? 0).toLocaleString(),
 										},
 									]
-								: result.categories.map((category) => ({
+								: categories.map((category) => ({
 										dataKey: `category-${category.categoryNo}`,
 										label: getCategory(category.categoryNo).label,
 										stack: "categories",
@@ -372,7 +379,7 @@ export const DefectHistogramItem = ({
 						</Button>
 					</Box>
 					<Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-						{result.categories.map((category) => (
+						{categories.map((category) => (
 							<Typography key={category.categoryNo} variant="caption">
 								{getCategory(category.categoryNo).label}:{" "}
 								{category.counts.reduce((sum, count) => sum + count, 0)}

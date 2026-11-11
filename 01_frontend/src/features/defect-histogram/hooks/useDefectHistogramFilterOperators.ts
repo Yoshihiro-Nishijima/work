@@ -5,29 +5,43 @@ import {
 import { useCallback, useMemo } from "react";
 
 import { DefectHistogramFilterInput } from "../components/DefectHistogramFilterInput";
+import { DEFECT_HISTOGRAM_FIELD_REGISTRY } from "../registry";
 import { isDefectHistogramField } from "../types";
 import { useDefectHistogram } from "./useDefectHistogram";
 
-export const useDefectHistogramFilterOperators = (): {
+export const useDefectHistogramFilterOperators = (
+	fieldHeaderNames: Readonly<Record<string, string>>,
+): {
 	defectHistogramFilterOperators: GridFilterOperator[];
 } => {
 	const { addHistogram } = useDefectHistogram();
 	const openHistogram = useCallback(
 		(field: string, item: Parameters<typeof addHistogram>[1]) => {
 			if (!isDefectHistogramField(field)) return;
-			addHistogram(field, item);
+			const fieldLabel = fieldHeaderNames[field];
+			if (fieldLabel == null) {
+				throw new Error(
+					`Missing DataGrid headerName for histogram field: ${field}`,
+				);
+			}
+			addHistogram(field, item, fieldLabel);
 		},
-		[addHistogram],
+		[addHistogram, fieldHeaderNames],
 	);
 	return {
-		defectHistogramFilterOperators: useMemo(
-			() =>
-				getGridNumericOperators().map((operator) => ({
+		defectHistogramFilterOperators: useMemo(() => {
+			const allowedOperators = new Set<string>(
+				Object.values(DEFECT_HISTOGRAM_FIELD_REGISTRY).flatMap(
+					(definition) => definition.allowedOperators,
+				),
+			);
+			return getGridNumericOperators()
+				.filter((operator) => allowedOperators.has(operator.value))
+				.map((operator) => ({
 					...operator,
 					InputComponent: DefectHistogramFilterInput,
 					InputComponentProps: { onOpenHistogram: openHistogram },
-				})),
-			[openHistogram],
-		),
+				}));
+		}, [openHistogram]),
 	};
 };

@@ -191,8 +191,22 @@ export const useDefectViewColumns = (
 	options: { enableHistogram?: boolean } = {},
 ): GridColDef[] => {
 	const { defectDisplayRowList } = useDefectDisplay();
+	const baseColumns = useMemo(
+		() => DefectViewColumns(defectDisplayRowList),
+		[defectDisplayRowList],
+	);
+	const fieldHeaderNames = useMemo(
+		() =>
+			baseColumns.reduce<Record<string, string>>((headerNames, column) => {
+				if (column.headerName != null) {
+					headerNames[column.field] = column.headerName;
+				}
+				return headerNames;
+			}, {}),
+		[baseColumns],
+	);
 	const { defectHistogramFilterOperators } =
-		useDefectHistogramFilterOperators();
+		useDefectHistogramFilterOperators(fieldHeaderNames);
 	const defaultFilterOperators = useMemo(() => getGridNumericOperators(), []);
 	const filterOperators = options.enableHistogram
 		? defectHistogramFilterOperators

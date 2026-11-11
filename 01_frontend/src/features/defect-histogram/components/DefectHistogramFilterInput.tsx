@@ -7,7 +7,7 @@ import type { GridFilterItem } from "@mui/x-data-grid-pro";
 import { getDefectHistogramFilterSnapshot } from "../utils/filterSnapshot";
 
 type Props = GridFilterInputValueProps & {
-	onOpenHistogram: (field: string, item?: GridFilterItem) => void;
+	onOpenHistogram: (field: string, item: GridFilterItem | undefined) => void;
 };
 
 export const DefectHistogramFilterInput = ({
@@ -24,10 +24,7 @@ export const DefectHistogramFilterInput = ({
 			<Button
 				variant="text"
 				onClick={() =>
-					onOpenHistogram(
-						item.field,
-						getDefectHistogramFilterSnapshot(item),
-					)
+					onOpenHistogram(item.field, getDefectHistogramFilterSnapshot(item))
 				}
 				sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
 			>

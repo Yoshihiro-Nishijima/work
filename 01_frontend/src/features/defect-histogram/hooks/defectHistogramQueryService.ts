@@ -1,7 +1,7 @@
 import {
-	postDefectHistogram,
-	postDefectHistogramRange,
-} from "../api/defectHistogram";
+	BackendDefectHistogramProvider,
+	type DefectHistogramProvider,
+} from "../providers/DefectHistogramProvider";
 import type {
 	DefectHistogramRangeRequest,
 	DefectHistogramRangeResponse,
@@ -12,11 +12,6 @@ import type {
 type PendingRange = {
 	controller: AbortController;
 	promise: Promise<DefectHistogramRangeResponse>;
-};
-
-type HistogramApi = {
-	getHistogram: typeof postDefectHistogram;
-	getRange: typeof postDefectHistogramRange;
 };
 
 const rangeKey = (request: DefectHistogramRangeRequest): string =>
@@ -37,10 +32,7 @@ export class DefectHistogramQueryService {
 	>();
 
 	constructor(
-		private readonly api: HistogramApi = {
-			getHistogram: postDefectHistogram,
-			getRange: postDefectHistogramRange,
-		},
+		private readonly provider: DefectHistogramProvider = new BackendDefectHistogramProvider(),
 	) {}
 
 	async getHistogram(
@@ -53,7 +45,7 @@ export class DefectHistogramQueryService {
 		const controller = new AbortController();
 		this.histogramRequests.set(id, controller);
 		try {
-			return await this.api.getHistogram(
+			return await this.provider.getHistogram(
 				resultName,
 				request,
 				controller.signal,
@@ -100,7 +92,7 @@ export class DefectHistogramQueryService {
 		let pending = this.rangeRequests.get(id)?.get(key);
 		if (pending == null) {
 			const controller = new AbortController();
-			const promise = this.api
+			const promise = this.provider
 				.getRange(resultName, request, controller.signal)
 				.finally(() => {
 					const requests = this.rangeRequests.get(id);

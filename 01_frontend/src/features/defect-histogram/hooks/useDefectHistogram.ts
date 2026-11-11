@@ -17,10 +17,12 @@ let nextHistogramId = 0;
 const initialItem = (
 	histogramId: string,
 	field: DefectHistogramField,
+	fieldLabel: string,
 	filter?: GridFilterItem,
 ): DefectHistogramItemState => ({
 	histogramId,
 	field,
+	fieldLabel,
 	filter,
 	status: "loading",
 	rangeStatus: "idle",
@@ -97,11 +99,15 @@ export const useDefectHistogram = () => {
 	);
 
 	const addHistogram = useCallback(
-		(field: DefectHistogramField, filter?: GridFilterItem) => {
+		(
+			field: DefectHistogramField,
+			filter: GridFilterItem | undefined,
+			fieldLabel: string,
+		) => {
 			const id = `defect-histogram-${++nextHistogramId}`;
 			const filterSnapshot = snapshotFilter(filter);
 			setItems((current) => [
-				initialItem(id, field, filterSnapshot),
+				initialItem(id, field, fieldLabel, filterSnapshot),
 				...current,
 			]);
 			void fetchHistogram(id, field, filterSnapshot);

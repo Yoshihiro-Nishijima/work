@@ -1,27 +1,16 @@
 import type { GridFilterItem } from "@mui/x-data-grid-pro";
 
-export const DEFECT_HISTOGRAM_FIELDS = [
-	"defectId",
-	"abnormality",
-	"width",
-	"height",
-	"gray",
-	"grayDiff",
-	"area",
-	"mFOVno",
-	"sFOVno",
-	"chipX",
-	"chipY",
-	"coordX",
-	"coordY",
-] as const;
+import {
+	DEFECT_HISTOGRAM_FIELDS,
+	type DefectHistogramField,
+	isDefectHistogramField,
+} from "../registry";
 
-export type DefectHistogramField = (typeof DEFECT_HISTOGRAM_FIELDS)[number];
-
-export const isDefectHistogramField = (
-	field: string,
-): field is DefectHistogramField =>
-	(DEFECT_HISTOGRAM_FIELDS as readonly string[]).includes(field);
+export {
+	DEFECT_HISTOGRAM_FIELDS,
+	type DefectHistogramField,
+	isDefectHistogramField,
+};
 
 export type DefectHistogramRequest = {
 	field: DefectHistogramField;
@@ -58,6 +47,7 @@ export type DefectHistogramStatus = "idle" | "loading" | "success" | "error";
 export type DefectHistogramItemState = {
 	histogramId: string;
 	field: DefectHistogramField;
+	fieldLabel: string;
 	filter?: GridFilterItem;
 	status: DefectHistogramStatus;
 	rangeStatus: DefectHistogramStatus;

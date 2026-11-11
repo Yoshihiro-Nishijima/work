@@ -1,5 +1,3 @@
-import math
-
 from mbmmi.db.query import FilterItem
 
 from .calculation import HistogramCalculationService
@@ -10,18 +8,24 @@ from .models import (
     HistogramRangeCategory,
     HistogramRangeCounts,
 )
-from .providers.result import ResultDefectHistogramProvider
-from .registry import ALLOWED_OPERATORS, get_histogram_field
+from .providers.base import DefectHistogramDataProvider
+from .registry import get_histogram_field
 
 
 def validate_filter(field: str, filter_item: object | None) -> FilterItem | None:
-    get_histogram_field(field)
+    field_definition = get_histogram_field(field)
+    if not field_definition.histogram_target:
+        raise ValueError(f"unsupported histogram field: {field}")
     if filter_item is None:
         return None
     if not isinstance(filter_item, FilterItem):
         raise ValueError("filter must be a valid FilterItem")
+    if filter_item.field != field:
+        raise ValueError("filter field must match histogram field")
     filter_definition = get_histogram_field(filter_item.field)
-    if filter_item.operator not in ALLOWED_OPERATORS:
+    if not filter_definition.filter_target:
+        raise ValueError(f"unsupported filter field: {filter_item.field}")
+    if filter_item.operator not in filter_definition.allowed_operators:
         raise ValueError(f"unsupported filter operator: {filter_item.operator}")
     normalized_value = filter_item.value
     if filter_item.operator not in {"isEmpty", "isNotEmpty"}:
@@ -31,15 +35,7 @@ def validate_filter(field: str, filter_item: object | None) -> FilterItem | None
         if is_list_operator != isinstance(normalized_value, list):
             raise ValueError("filter value type does not match operator")
         values = normalized_value if is_list_operator else [normalized_value]
-        numeric_values: list[float] = []
-        for value in values:
-            try:
-                number = float(value)
-            except (TypeError, ValueError, OverflowError) as exc:
-                raise ValueError("filter value must be numeric and finite") from exc
-            if not math.isfinite(number):
-                raise ValueError("filter value must be numeric and finite")
-            numeric_values.append(number)
+        numeric_values = [filter_definition.normalize_value(value) for value in values]
         normalized_value = numeric_values if is_list_operator else numeric_values[0]
     return filter_item.model_copy(
         update={
@@ -50,7 +46,7 @@ def validate_filter(field: str, filter_item: object | None) -> FilterItem | None
 
 
 class DefectHistogramService:
-    def __init__(self, provider: ResultDefectHistogramProvider):
+    def __init__(self, provider: DefectHistogramDataProvider):
         self._provider = provider
 
     def calculate(

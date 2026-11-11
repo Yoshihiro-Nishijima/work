@@ -17,6 +17,14 @@ def test_filter_normalizes_frontend_field_and_numeric_string():
     assert result.value == 3.5
 
 
+def test_filter_field_must_match_histogram_field():
+    with pytest.raises(ValueError, match="filter field must match histogram field"):
+        validate_filter(
+            "gray",
+            FilterItem(field="width", operator=">", value=1),
+        )
+
+
 def test_filter_rejects_unknown_field_operator_and_non_finite_value():
     with pytest.raises(ValueError, match="unsupported histogram field"):
         validate_filter("unknown", None)

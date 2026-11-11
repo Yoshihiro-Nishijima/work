@@ -7,6 +7,7 @@ import { DefectHistogramItem } from "./DefectHistogramItem";
 
 afterEach(() => {
 	cleanup();
+	vi.unstubAllGlobals();
 });
 
 const createItem = (
@@ -77,6 +78,53 @@ describe("DefectHistogramItem states", () => {
 		);
 
 		expect(screen.getByText("API error")).toBeTruthy();
+	});
+
+	it("keeps category colors and shows the bin tooltip on hover", async () => {
+		vi.stubGlobal(
+			"matchMedia",
+			vi.fn(() => ({
+				matches: false,
+				addEventListener: vi.fn(),
+				removeEventListener: vi.fn(),
+			})),
+		);
+		const item = createItem({
+			status: "success",
+			result: {
+				dataMin: 0,
+				dataMax: 10,
+				edges: [0, 5, 10],
+				counts: [4, 2],
+				categories: [
+					{ categoryNo: 1, counts: [3, 0] },
+					{ categoryNo: 2, counts: [1, 2] },
+				],
+				matchedCount: 6,
+				numericValueCount: 6,
+			},
+			range: [0, 10],
+		});
+		const onRangeCommit = vi.fn();
+		const { container } = render(
+			<DefectHistogramItem
+				item={item}
+				{...itemHandlers}
+				onRangeCommit={onRangeCommit}
+			/>,
+		);
+
+		const bars = container.querySelectorAll(".MuiBarElement-root");
+		expect(bars.length).toBe(4);
+		expect(getComputedStyle(bars[0]).fill).toBe("#1976d2");
+		expect(getComputedStyle(bars[2]).fill).toBe("#388e3c");
+
+		fireEvent.mouseEnter(bars[0]);
+		fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+		expect(await screen.findByText("CAT1: 3")).toBeTruthy();
+
+		fireEvent.click(bars[0]);
+		expect(onRangeCommit).toHaveBeenCalledWith(item, [0, 5]);
 	});
 });
 

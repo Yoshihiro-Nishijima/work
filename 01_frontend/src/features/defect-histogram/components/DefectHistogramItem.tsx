@@ -1,7 +1,8 @@
 import { Alert, Box, Button, Slider, Typography } from "@mui/material";
 import {
 	BarChart,
-	BarElement,
+	type BarElementOwnerState,
+	BarElementPath,
 	type BarElementProps,
 } from "@mui/x-charts/BarChart";
 import type { ChartsItemContentProps } from "@mui/x-charts/ChartsTooltip";
@@ -118,26 +119,52 @@ export const DefectHistogramItem = ({
 		if (binRange != null) onRangeCommit(item, binRange);
 	};
 
-	const SelectableBar = (props: BarElementProps): JSX.Element => (
-		<BarElement
-			{...props}
-			role="button"
-			tabIndex={0}
-			aria-label={`bin ${props.dataIndex + 1} を選択`}
-			style={{ ...props.style, cursor: "pointer" }}
-			onClick={(event) => {
-				props.onClick?.(event);
-				selectBin(props.dataIndex);
-			}}
-			onKeyDown={(event) => {
-				props.onKeyDown?.(event);
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					selectBin(props.dataIndex);
+	type SelectableBarProps = BarElementProps & {
+		ownerState?: BarElementOwnerState;
+	};
+	const SelectableBar = (props: SelectableBarProps): JSX.Element => {
+		const {
+			ownerState,
+			id: _id,
+			dataIndex: _dataIndex,
+			color: _color,
+			classes: _classes,
+			highlightScope: _highlightScope,
+			slots: _slots,
+			slotProps: _slotProps,
+			...pathProps
+		} = props;
+		if (ownerState == null) {
+			throw new Error("MUI X Charts did not provide bar owner state.");
+		}
+		const dataIndex = ownerState.dataIndex;
+		return (
+			<BarElementPath
+				{...pathProps}
+				ownerState={ownerState}
+				role="button"
+				tabIndex={0}
+				aria-label={
+					dataIndex == null ? undefined : `bin ${dataIndex + 1} を選択`
 				}
-			}}
-		/>
-	);
+				style={{ ...pathProps.style, cursor: "pointer" }}
+				onClick={(event) => {
+					pathProps.onClick?.(event);
+					if (dataIndex != null) selectBin(dataIndex);
+				}}
+				onKeyDown={(event) => {
+					pathProps.onKeyDown?.(event);
+					if (
+						dataIndex != null &&
+						(event.key === "Enter" || event.key === " ")
+					) {
+						event.preventDefault();
+						selectBin(dataIndex);
+					}
+				}}
+			/>
+		);
+	};
 
 	const openDetails = (): void => {
 		setDetailsOpen(true);

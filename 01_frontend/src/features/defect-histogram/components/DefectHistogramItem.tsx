@@ -6,6 +6,7 @@ import {
 	type BarElementProps,
 } from "@mui/x-charts/BarChart";
 import type { ChartsItemContentProps } from "@mui/x-charts/ChartsTooltip";
+import type { AxisConfig } from "@mui/x-charts/models";
 import { useState } from "react";
 import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -82,6 +83,14 @@ export const DefectHistogramItem = ({
 	const chartData = result
 		? mapDefectHistogramChartData(result, logCategoryCounts)
 		: [];
+	const histogramXAxis: Omit<AxisConfig<"band">, "id">[] = [
+		{
+			dataKey: "bin",
+			scaleType: "band",
+			categoryGapRatio: 0.05,
+			tickLabelInterval: () => false,
+		},
+	];
 	const formatChartCount = (value: number | null): string =>
 		Math.round(
 			logCategoryCounts ? histogramCountFromLog(value ?? 0) : (value ?? 0),
@@ -279,13 +288,7 @@ export const DefectHistogramItem = ({
 				<>
 					<BarChart
 						dataset={chartData}
-						xAxis={[
-							{
-								dataKey: "bin",
-								scaleType: "band",
-								tickLabelInterval: () => false,
-							},
-						]}
+						xAxis={histogramXAxis}
 						yAxis={[
 							{
 								valueFormatter: logCategoryCounts

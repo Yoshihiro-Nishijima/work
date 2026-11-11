@@ -87,7 +87,7 @@ export const DefectHistogramItem = ({
 		{
 			dataKey: "bin",
 			scaleType: "band",
-			categoryGapRatio: 0.05,
+			categoryGapRatio: 0,
 			tickLabelInterval: () => false,
 		},
 	];

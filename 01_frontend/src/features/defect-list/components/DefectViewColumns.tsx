@@ -147,7 +147,7 @@ export const DefectViewColumns = (
 		},
 		{
 			field: "sFOVno",
-			headerName: "sFOV No",
+			headerName: "S FOV No",
 			type: "number",
 			width: 60,
 			filterOperators: defectHistogramFilterOperators,

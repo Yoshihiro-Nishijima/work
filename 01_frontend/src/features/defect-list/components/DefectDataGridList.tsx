@@ -12,7 +12,6 @@ import {
 import { Point } from "pixi.js";
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { useAtomValue } from "jotai";
 import {
 	DataGridPaginationWithRefreshButton,
 	sortToolTipText,
@@ -30,17 +29,12 @@ import {
 } from "~/features/job-manager-info/types/converter";
 import { isFilterPending } from "~/features/misc/types/pagingQueryParam";
 import { DefectDataGridToolBar } from "../components/DefectDataGridToolBar";
-import {
-	categoryDefectClassAtom,
-	useDefect,
-	useDefectColumnVisibilityModel,
-} from "../hooks/useDefect";
+import { useDefect, useDefectColumnVisibilityModel } from "../hooks/useDefect";
 import { useDefectFilter } from "../hooks/useDefectFilter";
 import { useDefectViewColumns } from "./DefectViewColumns";
 
 export const DefectDataGridList = (): JSX.Element => {
 	const { resultName } = useResultName();
-	const categoryDefectClass = useAtomValue(categoryDefectClassAtom);
 	const {
 		sort,
 		defectList,
@@ -49,7 +43,7 @@ export const DefectDataGridList = (): JSX.Element => {
 		setPagination,
 		setSort,
 		setDefect,
-	} = useDefect({ defectClass: categoryDefectClass });
+	} = useDefect();
 	// Thumbnail列を除外した列定義を使用
 	const baseColumns = useDefectViewColumns({ enableHistogram: true }).filter(
 		(col) => col.field !== "src",
@@ -181,6 +175,10 @@ export const DefectDataGridList = (): JSX.Element => {
 		);
 	};
 
+	useEffect(() => {
+		setDefect();
+	}, [setDefect]);
+
 	/**
 	 * DataGridPaginationリフレッシュ関数
 	 * @param 無し
@@ -189,10 +187,6 @@ export const DefectDataGridList = (): JSX.Element => {
 	const handleClickRefresh = (): void => {
 		setDefect();
 	};
-
-	useEffect(() => {
-		setDefect();
-	}, [setDefect]);
 
 	return (
 		<Box sx={{ height: "100%" }}>

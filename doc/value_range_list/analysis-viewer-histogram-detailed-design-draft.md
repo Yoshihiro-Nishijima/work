@@ -137,17 +137,17 @@ Analysis Viewer
 
 ```text
 基準Snapshot
-+ 主Filters条件
-+ Categories条件
-+ 行Nより前の有効なRange条件
++ フィルター条件
++ カテゴリ条件
++ 行Nより前の有効なスライダー条件
 ```
 
-各条件グループはANDで合成する。初期Histogram実装では主FiltersとCategoriesの
+各条件グループはANDで合成する。初期Histogram実装ではフィルター条件とカテゴリ条件の
 実条件入力・他Featureへの反映は行わないため、両グループは空条件として扱う。
 将来の連携時も、Histogram自身のQuery条件を個別に再定義せず、共通条件モデルから
-主Filters条件、Categories条件、先行Range条件を組み立てる。
+フィルター条件、カテゴリ条件、先行スライダー条件を組み立てる。
 
-行N自身のRangeSlider条件は、行N自身のHistogramには適用しない。
+行N自身のスライダー条件は、行N自身のHistogramには適用しない。
 
 ```text
 Row 1: Size X = 10..20
@@ -239,8 +239,9 @@ UI状態の補足：
 ValueRangeFilterItemModel
 ├─ rowId
 ├─ field: DefectHistogramField | null
-├─ range
-├─ rangeCondition
+├─ dataRange
+├─ selectedRange
+├─ sliderCondition
 ├─ result: DefectHistogramResult | null
 ├─ status
 ├─ error
@@ -279,6 +280,60 @@ ValueRangeFilterListModel
 Snapshot準備中・準備失敗はList全体で扱い、Histogram取得の`loading`・`ready`・
 `empty`・`error`は各行で扱う。
 
+### 7.3 Item Modelの状態遷移
+
+```text
+unconfigured
+  └─ 項目選択
+       ↓
+    loading
+      ├─ 数値データあり ─→ ready
+      ├─ 数値データなし ─→ empty
+      └─ 取得失敗 ──────→ error
+
+ready
+  ├─ Slider確定／先行条件変更 ─→ loading（対象行）
+  ├─ 項目変更 ───────────────→ loading
+  ├─ 行削除 ─────────────────→ Modelから除去
+  └─ 全範囲リセット ──────────→ loading（影響行）
+
+empty
+  ├─ 項目変更 ───────────────→ loading
+  └─ 既存の再集計契機 ────────→ loading
+
+error
+  ├─ 項目変更 ───────────────→ loading
+  └─ 既存の再集計契機 ────────→ loading
+```
+
+取得開始時は対象Itemの`result`、`dataRange`、`selectedRange`を新しい取得結果へ
+置き換えるため、前回Histogramを表示しない。`sliderCondition`は、項目変更時や
+Rangeの再初期化時に明示的に更新し、取得Errorだけでは削除しない。
+
+### 7.4 List Modelの状態遷移
+
+```text
+初期化
+  └─ snapshot準備中
+       ↓
+    snapshot準備完了
+       └─ 初期6行を生成
+            ├─ 未設定行 ─→ unconfigured
+            └─ 初期項目 ─→ 各Itemをloading
+
+snapshot準備失敗
+  └─ List全体Error（初期行は保持、操作無効）
+
+snapshot変更
+  └─ 取得中のRequestを停止
+       ↓
+    初期6行へリセット
+```
+
+フィルター条件・カテゴリ条件の変更ではSnapshotを変更せず、
+`conditionVersion`を更新して全行を上から再集計する。旧VersionのResponseは、
+取得が成功していてもModelへ反映しない。
+
 UI状態・API状態・世代情報はFeature Hookを窓口として扱い、ComponentからAtomを
 直接参照しない。
 
@@ -304,12 +359,12 @@ ValueRangeFilterList機能
 ├─ DefectHistogram取得
 │  └─ Queryを実行し、Result／Empty／Errorを行Modelへ反映する
 └─ 親Feature条件統合
-   └─ 主Filters・Categories・ValueRangeを
+   └─ フィルター条件・カテゴリ条件・スライダー条件を
       DefectFilterConditionSetへ統合する
 ```
 
-「条件・再集計計画」はデータ取得を担当しない。主Filters・Categories・先行
-Range条件の合成、自行Range・全範囲Rangeの除外、操作ごとの再集計対象判定、
+「条件・再集計計画」はデータ取得を担当しない。フィルター条件・カテゴリ条件・
+先行スライダー条件の合成、自行スライダー条件・全範囲スライダー条件の除外、操作ごとの再集計対象判定、
 Query順序の決定、Query世代の更新を担当する。これらは可能な限り副作用を持たない
 純粋な関数として実装する。
 
@@ -329,7 +384,7 @@ Atom管理が実際に過度に複雑化し、更新規則の可読性・テス�
 限り、限定的なReducer導入を再検討する。初期実装では既存Frontendの状態管理方針
 との整合性を優先し、Reducerを標準方式として導入しない。
 
-親Featureは主Filters・Categories・ValueRangeFilterListを包含し、各機能が保持する
+親Featureはフィルター条件・カテゴリ条件・ValueRangeFilterListを包含し、各機能が保持する
 条件を統合した`DefectFilterConditionSet`を管理する。ValueRangeFilterListは行・
 Rangeを専用Storeで管理し、親FeatureはそこからValueRange条件を取得して統合する。
 `DefectFilterConditionSet`は条件の統合モデルであり、同じ条件を別Atomへ二重保持しない。
@@ -339,13 +394,13 @@ AtomへFeature外へ公開する状態は、ResultIdentity、Snapshot参照、�
 
 ## 8. 共通条件と機能別Query
 
-条件の意味を共通化し、機能ごとのQueryは分離する。
+絞り込み条件エリアの条件を統合モデルで表現し、機能ごとのQueryは分離する。
 
 ```text
 DefectFilterConditionSet
-├─ mainFilters
-├─ categories
-└─ valueRanges
+├─ filterConditions
+├─ categoryConditions
+└─ sliderConditions
         ↓
 機能別Query変換
 ├─ DefectHistogramQuery
@@ -355,19 +410,25 @@ DefectFilterConditionSet
 
 各機能のQuery形式を同一型にする必要はない。
 
-`DefectFilterConditionSet`は、親Featureが主Filters・Categories・ValueRangeFilterList
-の条件から統合する。ValueRangeFilterList自身は、親Featureが渡した統合条件のうち
-自分のHistogram取得に必要な条件を使い、行順から`priorRangeConditions`を構成する。
+`DefectFilterConditionSet`は、親Featureがフィルター条件・カテゴリ条件・
+ValueRangeFilterListのスライダー条件から統合する。ValueRangeFilterList自身は、
+親Featureが渡した統合条件のうち自分のHistogram取得に必要な条件を使い、行順から
+先行スライダー条件を構成する。
 Providerへは、条件合成済みの`DefectHistogramQuery`を渡し、Providerは条件の所有や
 合成を行わず、Queryを実行するだけとする。
 
-Histogramでは、対象行より前の条件を次の名称で扱う。
+初期Histogramでは、フィルター条件とカテゴリ条件に選択条件がないため、これらは空条件と
+する。空条件はSnapshotへの追加絞り込みを行わないことを意味し、Histogramの母集団
+はSnapshot作成時に定義された対象Resultの欠陥データ全体となる。Snapshot自体の
+対象範囲や、Snapshot作成時に除外されたデータの扱いを変更するものではない。
+
+Histogramでは、対象行より前のスライダー条件を次の名称で扱う。
 
 ```text
-priorRangeConditions
+priorSliderConditions
 ```
 
-`priorRangeConditions`は、ReactやPythonの標準用語ではなく、
+`priorSliderConditions`は、ReactやPythonの標準用語ではなく、
 Analysis Viewerの行連鎖を表す設計上の名称である。
 
 ## 9. Snapshot設計
@@ -927,9 +988,9 @@ DefectHistogramQuery
 └─ conditions: DefectFilterConditionSet
 ```
 
-`conditions`は親Featureが主Filters・Categories・ValueRange条件をANDで統合した
-完成済みの条件集合である。ValueRangeFilterListは、対象行より前の
-ValueRangeFilterItemに設定された有効なRange条件を画面上の上から順に抽出し、
+`conditions`は親Featureがフィルター条件・カテゴリ条件・スライダー条件をANDで
+統合した完成済みの条件集合である。ValueRangeFilterListは、対象行より前の
+ValueRangeFilterItemに設定された有効なスライダー条件を画面上の上から順に抽出し、
 全範囲のSliderを除外したうえで、親Featureの条件統合へ提供する。
 
 ### 10.2 Provider境界
@@ -1186,6 +1247,35 @@ DefectHistogramProvider
 行ErrorはList全体のErrorへ昇格させず、既存の再集計契機またはList再読み込みで
 復旧させる。
 
+### 12.1 エラーログ
+
+エラー発生時は、既存実装のロギング方式を踏襲して記録する。
+
+- Snapshot準備Error：Backendで`resultIdentity`、`jobId`、処理stage、エラー分類を記録する
+- 行Histogram取得Error：Backendで`snapshotId`、対象field、エラー分類を記録する
+- FrontendはAbort以外の取得失敗を、operation、rowId、jobIdまたはsnapshotId、
+  request generationなどの追跡情報とともに補助的に記録する
+- Abort、古いResponseの破棄、Emptyは通常制御またはデータなしであり、Errorログにしない
+- 生の条件値や欠陥データなど、不要なデータはログへ出力しない
+- ログ内容と画面表示文言は分離し、内部エラー詳細をそのまま画面表示しない
+
+### 12.2 Snapshot準備状態とJob状態の対応
+
+画面向けの`SnapshotPreparationStatus`は、`idle`、`preparing`、`ready`、
+`error`の4値に限定する。BackendのJob状態やHTTPエラーの詳細は、画面状態へ
+直接追加せず、別のメタデータおよびログで保持する。
+
+| Backend／API状態 | 画面状態 |
+|---|---|
+| 初期状態、未要求 | `idle` |
+| `PROCESSING`、準備中を示す409 | `preparing` |
+| `COMPLETED`かつSnapshot ID取得成功 | `ready` |
+| `FAILED`、`CANCELED`、準備失敗、回復不能な404 | `error` |
+
+`CANCELED`は画面上で独立状態として表示せず、必要に応じてエラー分類や
+Jobメタデータで識別する。`retrying`も独立状態にはせず、再試行中は
+`preparing`として扱う。
+
 ## 13. 暫定Host
 
 正式Analysis Viewer完成前は、IntegratedViewerにPreview用Hostを配置する。
@@ -1219,9 +1309,9 @@ IntegratedViewer版のDataGrid Filter Operator仕様は変更しない。
 - 追加行は未設定
 - 同一項目の重複を許可
 - 行順を条件適用順とする
-- 自行Rangeは自行Histogramへ適用しない
-- 先行Rangeは後続Histogramへ適用する
-- 主Filters・Categories・先行Range条件はANDで合成する
+- 自行スライダー条件は自行Histogramへ適用しない
+- 先行スライダー条件は後続Histogramへ適用する
+- フィルター条件・カテゴリ条件・先行スライダー条件はANDで合成する
 - Result変更等でSnapshotを更新する
 - 初期ProviderはBackend
 - DuckDB WASMは将来候補
@@ -1245,9 +1335,9 @@ IntegratedViewer版のDataGrid Filter Operator仕様は変更しない。
 - 行HistogramのLoading中も、項目変更・削除・並べ替えなどの行操作を許可する
 - ValueRangeFilterListは専用Atom Store／Providerを使用し、Snapshot変更時に初期化する
 - 初期状態管理はAtom＋Feature Hookを基本とし、Reducerは複雑化時の限定的な候補とする
-- 主Filters・Categoriesの変更時はSnapshotを再作成せず、行・項目・Rangeを維持して
+- フィルター条件・カテゴリ条件の変更時はSnapshotを再作成せず、行・項目・Rangeを維持して
   全行を上から再集計する
-- 主Filters・Categories変更時はQuery世代を更新し、旧条件のResponseを破棄する
+- フィルター条件・カテゴリ条件変更時はQuery世代を更新し、旧条件のResponseを破棄する
 - Slider操作はデバウンスと確定イベントを組み合わせて後続行へ反映する
 - `DefectFilterConditionSet`は親Featureが統合管理し、Providerには合成済みQueryを渡す
 - 機能境界はList Model管理、行操作、条件・再集計計画、DefectHistogram取得、
@@ -1263,6 +1353,7 @@ IntegratedViewer版のDataGrid Filter Operator仕様は変更しない。
 - SnapshotはViewer単位ではなく、同一Result・同一データ世代で共有
 - API要求はデバウンスと確定イベントを組み合わせる
 - Snapshot作成中はデータ依存操作を無効化し、Loadingを表示する
+- Snapshot準備Errorと行Histogram取得Errorは、Frontend／Backendで切り分けて記録する
 
 ### 14.3 保留
 
@@ -1291,3 +1382,715 @@ IntegratedViewer版のDataGrid Filter Operator仕様は変更しない。
 6. 行操作別の再集計フロー
 7. AtomとCustom Hookの公開境界
 8. 暫定Hostと正式HostのProps
+
+### 15.1 Frontend Model型の初期案
+
+既存FrontendのFeatureでは、Feature配下の`types`でRequest／Response／Item型を
+管理している。Analysis Viewer版でもこの配置方針を踏襲する。ただし、既存の
+`DefectHistogramItemState`はIntegratedViewer版の状態を表す型であるため、
+Analysis Viewer版ではValueRangeFilterList固有のModel型として定義する。
+
+```ts
+type ResultIdentity = {
+  device: string;
+  name: string;
+  path: string;
+};
+
+type SnapshotReference = {
+  snapshotSetId: string;
+  snapshotId: string;
+};
+
+type ValueRangeFilterItemStatus =
+  | "unconfigured"
+  | "loading"
+  | "ready"
+  | "empty"
+  | "error";
+
+type NumericRange = {
+  lower: number;
+  upper: number;
+};
+
+type SliderCondition = {
+  field: DefectHistogramField;
+  lower: number;
+  upper: number;
+};
+
+type DefectFilterConditionSet = {
+  filterConditions: DefectFilterCondition[];
+  categoryConditions: DefectCategoryCondition[];
+  sliderConditions: SliderCondition[];
+};
+
+type ValueRangeFilterItemModel = {
+  rowId: string;
+  field: DefectHistogramField | null;
+  dataRange: NumericRange | null;
+  selectedRange: NumericRange | null;
+  sliderCondition: SliderCondition | null;
+  result: DefectHistogramResult | null;
+  status: ValueRangeFilterItemStatus;
+  error: string | null;
+  requestGeneration: number;
+};
+
+type ValueRangeFilterListModel = {
+  rows: ValueRangeFilterItemModel[];
+  resultIdentity: ResultIdentity;
+  snapshot: SnapshotReference | null;
+  snapshotStatus: SnapshotPreparationStatus;
+  conditionVersion: number;
+};
+```
+
+`dataRange`はHistogram対象の有効な数値の最小値・最大値を保持し、Sliderの操作可能
+範囲を表す。`selectedRange`はユーザーがSliderで選択中の範囲を保持し、
+`sliderCondition`は後続行へ適用可能な確定条件を表す。全範囲の場合は
+`sliderCondition`を`null`とし、Queryへ含めない。Histogram取得のErrorやEmptyは、
+最後に確定した`sliderCondition`を自動的に削除しない。
+
+`DefectHistogramResult`の`dataMin`／`dataMax`は`dataRange`へ、`counts`はBinごとの
+棒の高さへ、`matchedCount`と`numericValueCount`はHistogram全体の件数情報へ対応する。
+
+`ValueRangeFilterListModel`はList専用Storeが所有する。`DefectFilterConditionSet`は
+別の保存用Modelとして二重保持せず、親Featureがフィルター条件・カテゴリ条件と
+Listのスライダー条件から組み立て、`DefectHistogramQuery`へ渡す。
+
+`DefectFilterCondition`は、既存Frontendの`GridFilterItem`をそのまま内部状態として
+使用する型ではない。絞り込み条件エリアを親Feature主体で構成できるよう、Frontend内部
+ではUIコンポーネントに依存しない条件型として扱う。既存Backendの`FilterItem`については、
+`field`・`operator`・`value`による条件表現、対応演算子、入力検証の考え方を踏襲する。
+Analysis Viewer用API DTOへ変換する境界で、この既存方針を適用する。
+
+### 15.2 DefectHistogram Query／Result型の初期案
+
+```ts
+type DefectHistogramQuery = {
+  resultIdentity: ResultIdentity;
+  snapshot: SnapshotReference;
+  field: DefectHistogramField;
+  conditions: DefectFilterConditionSet;
+};
+
+type DefectHistogramBin = {
+  lower: number;
+  upper: number;
+  count: number;
+};
+
+type DefectHistogramCategory = {
+  categoryNo: number;
+  counts: number[];
+};
+
+type DefectHistogramResult = {
+  dataMin: number | null;
+  dataMax: number | null;
+  edges: number[];
+  counts: number[];
+  categories: DefectHistogramCategory[];
+  matchedCount: number;
+  numericValueCount: number;
+};
+```
+
+データなしは`DefectHistogramResult`の`numericValueCount === 0`で表す成功結果とし、
+ProviderがUI用の`empty`状態を返さない。
+通信・Snapshot・集計失敗は例外として返し、Feature Hookが行の`error`へ変換する。
+
+Empty判定は`matchedCount`ではなくHistogram対象項目の数値有無で行う。
+`numericValueCount === 0`をFrontendの判定基準とし、Backendレスポンスでは
+`dataMin`と`dataMax`がともに`null`であることを不変条件とする。これは、既存
+IntegratedViewer版BackendのResponse意味を踏襲したものである。
+
+UIの表示・操作挙動はモック版を基準とし、Histogram APIのResponse意味と数値なしの
+表現は既存IntegratedViewer版Backendを基準とする。Analysis Viewer版では、この
+二つの既存実装の役割を混同せず、UI仕様とデータ契約をそれぞれの基準に合わせる。
+
+### 15.3 Provider契約の初期案
+
+```ts
+interface DefectHistogramProvider {
+  getHistogram(
+    query: DefectHistogramQuery,
+    signal?: AbortSignal,
+  ): Promise<DefectHistogramResult>;
+}
+```
+
+Providerは完成済みの`DefectHistogramQuery`を実行するだけとし、条件の所有・合成、
+行順による先行条件の決定、UI状態の判定は担当しない。初期実装は
+`BackendDefectHistogramProvider`、将来の差し替え先は
+`DuckDbWasmDefectHistogramProvider`とする。
+
+### 15.4 Atom StoreとFeature Hookの契約
+
+`ValueRangeFilterList`は、画面インスタンスごとに生成する専用Atom Storeを使用する。
+モジュール共有のグローバルAtomは使用せず、Result変更または画面再初期化時にStoreを
+初期化する。Atomは`ValueRangeFilterListModel`を状態の所有者とし、Hook内に同じ状態を
+複製しない。
+
+```ts
+type ValueRangeFilterListActions = {
+  selectField: (rowId: string, field: DefectHistogramField | null) => void;
+  setSelectedRange: (rowId: string, range: NumericRange) => void;
+  addRow: () => void;
+  removeRow: (rowId: string) => void;
+  clearRows: () => void;
+  reorderRows: (sourceRowId: string, targetRowId: string) => void;
+  reload: () => void;
+};
+
+type UseValueRangeFilterListResult = {
+  model: ValueRangeFilterListModel;
+  actions: ValueRangeFilterListActions;
+  isInteractive: boolean;
+  sliderConditions: SliderCondition[];
+};
+```
+
+`useValueRangeFilterList`は、Atom Storeの読み書き、行操作、条件連鎖、再集計要求、
+Snapshot準備状態の画面反映を担当するComponent向けの唯一の窓口とする。
+ComponentからAtom、Provider、Query Serviceを直接利用させない。
+
+`isInteractive`はSnapshot準備状態とList操作可否からHookが導出する。行Histogramの
+Loading／Error／Emptyは、項目変更・削除・並べ替えを原則として妨げないため、
+List全体の操作可否と行単位の状態を混同しない。
+
+### 15.5 Query Serviceの責務
+
+`DefectHistogramQueryService`は、Hookから渡された再集計計画を実行する。責務は
+デバウンス、Abort、Request generationの採番、完了順による古いResponseの破棄、
+Provider呼び出しとする。
+
+```ts
+type DefectHistogramRecalculationPlan = {
+  conditionVersion: number;
+  rows: Array<{
+    rowId: string;
+    query: DefectHistogramQuery;
+  }>;
+};
+
+interface DefectHistogramQueryService {
+  schedule(
+    plan: DefectHistogramRecalculationPlan,
+    options?: { debounceMs?: number },
+  ): void;
+  cancel(): void;
+}
+```
+
+行の追加・削除・項目変更・Slider確定・並べ替えによる影響行の決定はHookまたは
+純粋な再集計計画関数が担当し、Query Serviceは行順や条件を解釈しない。
+Providerの例外はHookへ返し、HookがAbortを除いて該当行の`error`へ変換する。
+
+### 15.6 既存実装から踏襲する事項
+
+既存IntegratedViewer版Frontend／Backendで確立している構成は、Analysis Viewer版
+でも原則として踏襲する。既存実装と異なる判断が必要な場合だけ、Analysis Viewer
+固有の論点として扱う。
+
+Frontendで踏襲する事項：
+
+- Feature配下の`types`、`api`、`providers`、`hooks`、`utils`への責務別配置
+- `DefectHistogramQueryService`によるデバウンス、Abort、リクエスト世代管理
+- Providerのメソッドで`AbortSignal`を受け取る契約
+- Request型とResponse型を分ける構成
+- Feature HookをComponentと状態管理・取得処理の窓口とする構成
+- AbortされたRequestを通常のError状態へ遷移させない扱い
+
+Backendで踏襲する事項：
+
+- `DefectHistogramService`による入力検証、データ取得、Histogram計算、Response生成
+- RouterをHTTP境界に限定し、条件適用・SQL・集計をService側へ配置する構成
+- `dataMin`、`dataMax`、`edges`、`counts`、`categories`、`matchedCount`、
+  `numericValueCount`によるHistogram Response
+- Histogram対象の数値が存在しない場合、`dataMin`／`dataMax`を`null`、
+  `numericValueCount`を`0`とする表現
+
+Snapshot／Jobで踏襲する事項：
+
+- 非同期Job、Progress、Cancelを分離するAPIパターン
+- `PROCESSING`、`COMPLETED`、`FAILED`、`CANCELED`によるJob状態
+- Snapshot準備処理とHistogram Queryを分離するAPI境界
+- Router、Service、Snapshot管理の責務分離
+
+これらは、Analysis Viewer版の行順条件、Snapshot参照、専用Atom Storeなどの
+固有設計と組み合わせて使用する。既存実装にない判断が必要な場合は、既存方式を
+無理に拡張せず、固有論点として提示する。
+
+### 15.7 命名規則
+
+同じ概念に複数の呼称を与えず、以下の用語を固定して使用する。
+
+条件の分類：
+
+- `filter`：フィルター機能で設定された条件
+- `category`：カテゴリ機能で設定された条件またはカテゴリ定義
+- `slider`：ValueRangeFilterListのSliderで設定された条件
+- `condition`：上記の各条件を表すデータ
+- `DefectFilterConditionSet`：絞り込み条件エリア全体の統合条件
+
+ValueRangeFilterListのSlider条件は、型名・プロパティ名ともに`SliderCondition`または
+`sliderConditions`を使用し、`ValueRangeCondition`、`rangeCondition`、
+`valueRanges`などの同義語は新たに使用しない。対象行より前のSlider条件は
+`priorSliderConditions`と呼ぶ。
+
+状態・取得データ：
+
+- `Model`：画面・行が保持する情報全体
+- `Status`：状態分類値
+- `Result`：Providerから返る集計結果
+- `Query`：Providerへ渡す完成済み取得条件
+- `Provider`：Backend／DuckDB WASMなどの取得方式
+- `Service`：Query実行やBackend集計などの処理補助
+
+DefectHistogramに関する型・実装名は、`DefectHistogram`を基本名とする。
+`HistogramQuery`、`HistogramProvider`などの短縮名や、同一層での
+`MainFilter`、`ValueRange`、`Range`の混在は避ける。
+
+### 15.8 条件連鎖と再集計計画の純粋関数
+
+条件連鎖と再集計対象の決定は、AtomやProviderに依存しない純粋な関数として分離する。
+最低限、次の関数を定義する。
+
+```ts
+function getPriorSliderConditions(
+  rows: ValueRangeFilterItemModel[],
+  rowIndex: number,
+): SliderCondition[];
+
+function buildDefectHistogramQuery(
+  context: {
+    resultIdentity: ResultIdentity;
+    snapshot: SnapshotReference;
+    filterConditions: DefectFilterCondition[];
+    categoryConditions: DefectCategoryCondition[];
+  },
+  row: ValueRangeFilterItemModel,
+  priorSliderConditions: SliderCondition[],
+): DefectHistogramQuery | null;
+
+function getRecalculationStartIndex(
+  operation:
+    | { type: "sliderChanged"; rowIndex: number }
+    | { type: "fieldChanged"; rowIndex: number }
+    | { type: "rowRemoved"; rowIndex: number }
+    | { type: "rowsReordered" }
+    | { type: "allRangesReset" },
+  rowCount: number,
+): number | null;
+```
+
+`getPriorSliderConditions`は、対象行より前の行について、`sliderCondition`が存在し、
+かつ全範囲ではない条件だけを行順に返す。対象行自身の条件、未設定行、Empty行から
+生成される条件は含めない。Error行は、最後に確定された`sliderCondition`が残って
+いれば含める。
+
+`buildDefectHistogramQuery`は、行が未設定、Snapshot未準備、または対象行のfieldが
+未確定の場合は`null`を返す。行自身の`sliderCondition`はQueryへ含めず、
+`filterConditions`、`categoryConditions`、`priorSliderConditions`だけを合成する。
+
+再集計開始位置は操作ごとに次の規則とする。
+
+| 操作 | 開始位置 | 備考 |
+|---|---:|---|
+| Slider変更 | 変更行+1 | 変更行自身のHistogramは再取得せず、後続行のみ再集計 |
+| 項目変更 | 変更行 | Rangeを初期化し、変更行と後続行を再集計 |
+| 行削除 | 削除位置 | 削除後の同位置から後続行を再集計 |
+| 並べ替え | 0 | 確定後に全行を上から再集計 |
+| 全範囲リセット | 0 | 全行の先行条件が変化し得るため全行を再集計 |
+```
+
+Slider変更では、自行Histogramは自分自身の条件を適用しないため、変更行の
+Histogramを再取得せず、変更行より後続の行を再集計する。選択範囲変更により
+自行の表示範囲やSliderの`dataRange`を再計算する仕様へ変更する場合は、
+この境界を明示的に見直す。
+
+### 15.9 Component PropsとHost接続
+
+Componentは取得方式やAtomを直接受け取らず、ModelとイベントだけをPropsとして受け取る。
+ProviderとList専用StoreはFeature内部のContext／Hook境界で解決する。
+
+```ts
+type ValueRangeFilterListProps = {
+  resultIdentity: ResultIdentity;
+  snapshot: SnapshotReference | null;
+  snapshotStatus: SnapshotPreparationStatus;
+  snapshotError: string | null;
+  filterConditions: DefectFilterCondition[];
+  categoryConditions: DefectCategoryCondition[];
+  onSliderConditionsChange?: (conditions: SliderCondition[]) => void;
+};
+
+type ValueRangeFilterItemProps = {
+  model: ValueRangeFilterItemModel;
+  onFieldChange: (field: DefectHistogramField | null) => void;
+  onRemove: () => void;
+  onRangeChange: (range: NumericRange) => void;
+};
+
+type DefectHistogramItemProps = {
+  result: DefectHistogramResult | null;
+  status: ValueRangeFilterItemStatus;
+  error: string | null;
+};
+
+type RangeSliderProps = {
+  dataRange: NumericRange | null;
+  selectedRange: NumericRange | null;
+  disabled: boolean;
+  onChange: (range: NumericRange) => void;
+};
+```
+
+`ValueRangeFilterList`は`useValueRangeFilterList`からList Modelと操作関数を取得し、
+各行へ`ValueRangeFilterItemProps`を渡す。`ValueRangeFilterItem`は表示構成とイベント
+通知に限定し、条件連鎖や再集計対象を判断しない。
+
+`DefectHistogramItem`は`result`と`status`を受け取り、`loading`、`empty`、`error`を
+描画状態へ変換する。`RangeSlider`は`dataRange`、`selectedRange`、`disabled`だけを
+扱い、`sliderCondition`や後続行の条件はPropsに持たない。
+
+暫定Hostと正式Hostは、同じ`ValueRangeFilterListProps`を用いてFeatureを呼び出す。
+暫定HostはIntegratedViewerの既存Filter状態を直接書き換えず、Filter条件は初期値の
+空配列として渡す。将来の正式Hostでは、親FeatureがFilter／Categoryの条件を渡し、
+`onSliderConditionsChange`でListが生成した有効なSlider条件を受け取って
+`DefectFilterConditionSet`へ統合する。
+
+Snapshot準備のAPI実行はListの外側または親Featureで行い、準備状態とErrorを
+`ValueRangeFilterListProps`でListへ渡す。Listは`SnapshotPreparationStatus`に応じて
+List全体のLoading／Errorを表示し、Histogram行の取得Errorと混同しない。
+Providerの実装はHostから直接Componentへ渡さず、Feature用Contextへ登録する。
+
+### 15.10 Snapshot／Histogram API DTO
+
+FrontendのModelとHTTP DTOは分離する。Frontend内部の`ResultIdentity`はSnapshot準備時に
+使用し、Histogram QueryではBackendが発行したOpaqueなSnapshot識別子を使用する。
+
+Snapshot準備Request／Response：
+
+```ts
+type PrepareHistogramSnapshotRequest = {
+  resultIdentity: ResultIdentity;
+  forceRefresh?: boolean;
+};
+
+type PrepareHistogramSnapshotResponse =
+  | {
+      kind: "ready";
+      snapshot: SnapshotReference;
+    }
+  | {
+      kind: "creating";
+      jobId: string;
+    };
+```
+
+Job進捗Responseは既存Dataset Jobの契約を踏襲する。
+
+```ts
+type HistogramSnapshotJobStatus =
+  | "PROCESSING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELED";
+
+type HistogramSnapshotJobProgressResponse = {
+  jobId: string;
+  status: HistogramSnapshotJobStatus;
+  stage: "VALIDATION" | "COPYING" | "FINALIZING" | null;
+  progress: number | null;
+  error: {
+    code: string;
+    message: string;
+  } | null;
+};
+
+type GetHistogramSnapshotResponse = {
+  snapshot: SnapshotReference;
+};
+```
+
+Histogram QueryのHTTP Requestは、`DefectHistogramQuery`からAPI DTOへ変換する。
+`resultIdentity`は送信せず、Snapshot IDと完成済み条件だけを送信する。
+
+```ts
+type DefectHistogramApiRequest = {
+  snapshotSetId: string;
+  snapshotId: string;
+  field: DefectHistogramField;
+  filterConditions: DefectFilterCondition[];
+  categoryConditions: DefectCategoryCondition[];
+  sliderConditions: SliderCondition[];
+};
+```
+
+`sliderConditions`には対象行より前の有効な条件だけを格納する。自行の条件、
+全範囲の条件、未設定行やEmpty行から生成される条件は含めない。
+
+想定するHTTP境界は次のとおりとする。
+
+```text
+POST /histogram-snapshots
+  Request: PrepareHistogramSnapshotRequest
+  Response: PrepareHistogramSnapshotResponse
+
+GET /histogram-snapshots/{jobId}/progress
+  Response: HistogramSnapshotJobProgressResponse
+
+GET /histogram-snapshots/jobs/{jobId}/snapshot
+  Response: GetHistogramSnapshotResponse
+
+POST /histogram-snapshots/{jobId}/cancel
+  Response: 既存Dataset JobのCancel Response
+
+POST /histogram-snapshots/{snapshotId}/histogram
+  Request: DefectHistogramApiRequest
+  Response: DefectHistogramResult
+```
+
+Histogram Queryでは、入力不正は4xx、Snapshotの不存在・期限切れは404、
+Snapshot準備中など利用不可は409、集計処理の予期しない失敗は5xxとして返す。
+Frontendは404をSnapshot再準備の対象として1回だけ扱い、同一Queryを無制限に
+再試行しない。409はSnapshot準備完了前の利用不可として、Snapshot状態に応じて
+待機またはList Errorへ変換する。
+
+Backendは`DefectHistogramApiRequest`を検証後、内部の`DefectHistogramQuery`へ変換する。
+ProviderはHTTP DTOを直接扱わず、Frontend／BackendそれぞれのService境界で変換する。
+
+### 15.11 APIエラーと画面状態の変換
+
+APIエラーは、Snapshot準備に関するList全体のErrorと、個別Histogram Queryに関する
+行単位のErrorを分けて扱う。
+
+| 発生箇所 | API／制御状態 | 画面への変換 |
+|---|---|---|
+| Snapshot準備 | 通信失敗、4xx、5xx | List全体を`error` |
+| Snapshot Job | `FAILED`／`CANCELED` | List全体を`error` |
+| Snapshot Job | `PROCESSING` | List全体を`preparing` |
+| Snapshot ID取得 | 409（未完了） | `preparing`を維持して再確認 |
+| Snapshot ID取得 | 404 | List全体を`error` |
+| Histogram Query | 入力不正4xx | 該当行を`error` |
+| Histogram Query | 集計5xx | 該当行を`error` |
+| Histogram Query | Snapshot 404 | Snapshot再準備フローへ移行 |
+| Histogram Query | Snapshot利用不可409 | Snapshot状態確認後、待機またはList全体を`error` |
+| Request制御 | Abort、世代不一致 | 状態変更なし |
+
+Snapshot準備Errorでは初期行を保持し、明示的なList再読み込みまでデータ依存操作を
+無効にする。行Histogram Errorでは該当行だけを`error`とし、後続行のQuery処理は
+継続する。既に確定している行の`sliderCondition`は、どちらのErrorでも自動的に
+削除しない。
+
+Snapshot消失・期限切れを検出した場合は、次の手順で一度だけ再準備する。
+
+```text
+Histogram QueryがSnapshot 404
+  ↓
+現在のQuery世代を無効化し、未完了RequestをAbort
+  ↓
+Snapshot準備APIを再実行（同じResult、forceRefresh=false）
+  ↓
+新Snapshot取得
+  ↓
+行・項目・Rangeを初期状態へ戻して全行を再集計
+```
+
+再準備後の同一Queryが再びSnapshot 404になった場合は再試行せず、List全体を
+`error`とする。再準備中にResult変更、明示的再読み込み、別のSnapshot切り替えが
+発生した場合は、古い再準備処理のResponseを破棄する。
+
+Snapshot準備APIの再試行とHistogram Queryの再試行は同じ世代管理へ統合するが、
+Snapshot準備の再試行回数とQueryの再試行回数は別に記録する。Abortされた処理、
+古い世代のResponse、Empty結果はError状態へ変換しない。
+
+## 16. 実装タスク分解
+
+### 16.1 Frontendの型・純粋関数
+
+1. `ResultIdentity`、`SnapshotReference`、`SnapshotPreparationStatus`、
+   `ValueRangeFilterItemModel`、`ValueRangeFilterListModel`を定義する。
+2. `DefectHistogramQuery`、`DefectHistogramResult`、API DTOを定義し、
+   Domain Modelとの変換関数を実装する。
+3. `getPriorSliderConditions`、`buildDefectHistogramQuery`、
+   `getRecalculationStartIndex`を実装する。
+4. Sliderの全範囲判定、Inclusive条件、未設定／Empty行の除外を共通関数へ分離する。
+
+### 16.2 Atom Store・Query Service・Feature Hook
+
+1. Listインスタンス専用のJotai Store生成処理を実装する。
+2. 行追加・削除・全削除・項目変更・並べ替え・Rangeリセットを実装する。
+3. `DefectHistogramQueryService`へデバウンス、Abort、世代管理、
+   古いResponse破棄を実装する。
+4. `useValueRangeFilterList`でSnapshot状態、行状態、再集計計画、
+   Provider呼び出しを統合する。
+5. 親Feature向けに有効な`sliderConditions`を出力する。
+
+### 16.3 Provider・Backend API
+
+1. `DefectHistogramProvider`と`BackendDefectHistogramProvider`を実装する。
+2. Snapshot準備、Progress、Snapshot ID取得、Cancel APIを実装する。
+3. Snapshot参照を受け取るHistogram Query APIを実装する。
+4. Backend Serviceで入力検証、先行条件の適用、Histogram計算、Response生成を行う。
+5. Snapshot共有、TTL、失効検出、ログ出力を実装する。
+6. 将来のDuckDB WASM Providerが同じDomain Queryを受け取れる境界を維持する。
+
+### 16.4 Component・Host
+
+1. `ValueRangeFilterList`を実装する。
+2. `ValueRangeFilterItem`を実装する。
+3. `DefectHistogramItem`を表示専用として実装する。
+4. `RangeSlider`を入力専用として実装する。
+5. IntegratedViewer暫定Hostを追加し、空のFilter／Category条件で接続する。
+6. Snapshot準備状態と行Histogram状態の表示を接続する。
+
+### 16.5 実装順序
+
+```text
+Frontend型・純粋関数
+  ↓
+Atom Store・Query Service
+  ↓
+Backend Snapshot／Histogram API
+  ↓
+Backend Provider接続
+  ↓
+Feature Hook
+  ↓
+Component
+  ↓
+暫定Host
+```
+
+Backend APIを先行して単独検証できるようにし、FrontendはProviderをStubへ差し替えて
+行操作・条件連鎖・状態遷移を先に検証できる構成とする。
+
+## 17. 最小テスト項目
+
+### 17.1 純粋関数
+
+- 自行のSlider条件がHistogram Queryへ含まれない
+- 先行行の有効なSlider条件が行順に含まれる
+- 全範囲、未設定行、Empty行の条件が除外される
+- Error行の最後に確定されたSlider条件が維持される
+- Slider条件が下限・上限を含む
+- 項目変更、削除、並べ替え、全範囲リセットの再集計開始位置が正しい
+
+### 17.2 状態・非同期処理
+
+- 初期6行と追加未設定行が正しく生成される
+- 項目変更時にRangeが初期化される
+- Loading開始時に前回Histogramがクリアされる
+- Abort後にError状態へ遷移しない
+- 古い世代のResponseがModelへ反映されない
+- Snapshot準備状態が4値へ正しく変換される
+- Snapshot 404後の再準備が1回だけ実行される
+
+### 17.3 Component・API
+
+- `unconfigured`／`loading`／`ready`／`empty`／`error`の表示が正しい
+- Empty／ErrorでRangeSliderが無効になる
+- List全体のSnapshot Errorと行Histogram Errorが分離される
+- Snapshot準備APIのUnion Responseを正しく解釈できる
+- Histogram APIの404／409／4xx／5xxを規定状態へ変換できる
+
+## 18. 実装着手前コード整合性レビュー
+
+### 18.1 レビュー方法
+
+実装着手前に、次の順で設計と既存コードを突き合わせる。
+
+1. 既存のRouter、Request／Response DTO、Service、Provider、Hookを特定する
+2. 設計上の各契約を、既存の型・HTTP形式・状態遷移と比較する
+3. モック版の操作イベントと再集計条件を、既存Frontendの制御と比較する
+4. 既存コードを流用する部分、新規境界を作る部分、変更禁止の部分を確定する
+5. 確定した境界ごとに、純粋関数、API、状態遷移、非同期処理のテスト項目を割り当てる
+
+### 18.2 レビュー結果と確定事項
+
+#### 既存Histogram API
+
+IntegratedViewer版の既存APIは次の形式である。
+
+```text
+POST /results/{name}/defect-histogram
+POST /results/{name}/defect-histogram-range
+```
+
+既存Requestは単一の`GridFilterItem`相当の条件を受け取り、
+Frontend Providerは`resultName`を引数として渡す。Analysis Viewerの
+Snapshot ID、ResultIdentity、複数条件、先行Slider条件を扱う契約とは一致しない。
+
+したがって、既存APIは後方互換性のため変更せず、Analysis Viewerは設計書の
+Snapshot-aware APIを新設する。新APIは既存API Router配下へ
+`/analysis-viewer/histogram-snapshots`として登録し、実URLは
+`/api/analysis-viewer/histogram-snapshots`を基準とする。既存Backendの
+Histogram計算、Response項目、数値なしの表現、入力検証の考え方は再利用する。
+
+既存の`defect-histogram-range`は、自行Histogramの再集計に使用しない。
+Analysis ViewerのSlider変更は後続行のHistogram Queryを再実行する。
+
+#### Job／Snapshot
+
+既存Dataset Jobから、`PROCESSING`、`COMPLETED`、`FAILED`、`CANCELED`、
+進捗、Cancel、Job監視、ログ出力の規約を踏襲する。一方、
+`DatasetCreateJob`はDataset固有の属性と完了Job保持期間を持つため、
+Histogram Snapshot Jobへ直接流用しない。
+
+Histogram Snapshot用には、同じ状態・APIパターンを持つ専用Jobモデルと
+Registryを新設する。Snapshot TTLとJob Registryの保持期間は別管理とし、
+Job削除後もTTL内のSnapshotを参照できる構成を維持する。
+
+#### Frontend
+
+既存の`itemsAtom`、IntegratedViewer版`DefectHistogramItemState`、
+`getHistogram`／`getRange`中心のQuery Serviceは、Analysis Viewerへ
+そのまま流用しない。既存実装のAbort、Provider差し替え、世代管理の考え方だけを
+踏襲し、Analysis Viewer専用のList-scoped Store、Model、Query Serviceを新設する。
+既存の`defectHistogramQueryService.test.ts`を、Abort・世代管理・古いResponse破棄の
+テスト構成における先行例として利用する。
+
+#### モック版との整合
+
+モック版で確認できる次の挙動は、設計と一致する。
+
+- 自行のRange条件を自行Histogramへ適用しない
+- 先行行のRange条件を後続行へ適用する
+- Slider変更時に後続行を再集計する
+- 項目変更時にSlider範囲を初期化する
+- 行削除時に削除位置以降を再集計する
+- 並べ替え確定後に全行を再集計する
+- Request Abort、Loadingクリア、Empty、Errorを行単位で扱う
+
+#### 条件型
+
+Analysis Viewer内部の`DefectFilterCondition`は、既存Backendの
+`field`／`operator`／`value`形式を基礎とするUI非依存型として確定する。
+MUIの`GridFilterItem`はAnalysis Viewer内部Modelへ持ち込まない。
+Filters／Categoriesの具体的なfieldとoperatorは各Feature仕様確定時に追加するが、
+Histogram初期実装では両方を空配列として扱う。
+
+### 18.3 実装着手条件
+
+以下は実装前に確定済みとする。
+
+- 既存IntegratedViewer APIは変更しない
+- Analysis Viewer用Snapshot APIとHistogram APIを新設する
+- Dataset Jobの状態・進捗・Cancel規約は踏襲するが、Jobモデルは分離する
+- 既存Histogram計算・Response意味・ログ方式は再利用する
+- Analysis ViewerのAtom、Hook、Query Service、Providerは専用実装とする
+- Slider変更ではRange集計APIを呼ばず、後続行Queryだけを再実行する
+- Filters／Categoriesの実条件は初期実装では空条件とする
+
+このレビューにより、Histogram単体の初期実装とIntegratedViewer暫定Hostでの
+確認に必要な主要な差分は解消した。Filters／Categoriesの具体仕様は本スレッドの
+Histogram実装完了条件ではなく、後続Featureの設計時に確定する。
+
+本スレッドの対象範囲では、Filter条件・Category条件を空配列として扱うため、
+それらの具体型やUIを確定する必要はない。Histogramは、将来それらを受け取れる
+`DefectFilterConditionSet`とProvider境界だけを用意した状態で実装可能とする。

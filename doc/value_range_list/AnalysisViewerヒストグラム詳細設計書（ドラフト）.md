@@ -2094,3 +2094,36 @@ Histogram実装完了条件ではなく、後続Featureの設計時に確定す�
 本スレッドの対象範囲では、Filter条件・Category条件を空配列として扱うため、
 それらの具体型やUIを確定する必要はない。Histogramは、将来それらを受け取れる
 `DefectFilterConditionSet`とProvider境界だけを用意した状態で実装可能とする。
+
+### 18.4 最終レビュー完了記録
+
+実装着手前の最終コード整合性レビューを完了した。対象はHistogram単体と、
+IntegratedViewer暫定Hostでの確認に限定した。
+
+確認済みの既存実装配置：
+
+- Frontend既存Histogram：`frontend/01_frontend/src/features/defect-histogram/`
+- Frontend既存Host：`features/defect-histogram/layouts/IntegratedMapAndDefectDetails.tsx`
+  および`features/misc/layouts/IntegratedViewer.tsx`
+- Frontend既存テスト：Feature配下の`*.test.ts`／`*.test.tsx`
+- Backend既存Histogram：`backend/02_backend/mbmmi/histogram/`
+- Backend既存Histogram API：`backend/02_backend/webapp/routers/api/defect_histogram.py`
+- Backend既存Histogramテスト：`mbmmi/histogram/tests/`
+- API Router登録：`backend/02_backend/webapp/routers/api/__init__.py`
+
+確定した実装境界：
+
+- 既存IntegratedViewer HistogramのAPI、Atom、Hook、Componentは後方互換性のため変更しない
+- Analysis Viewer Histogramは専用Feature実装として追加する
+- 既存Histogramの計算、Response項目、入力検証、Empty判定、ログ方式は再利用する
+- 既存の`getRange`／`defect-histogram-range`はAnalysis ViewerのSlider連鎖には使用しない
+- Analysis Viewer用APIは`/api/analysis-viewer/histogram-snapshots`配下へ追加する
+- 新APIのRouter登録は既存`webapp/routers/api/__init__.py`へ追加する
+- Snapshot Job／RegistryはDataset Jobから状態・進捗・Cancel規約のみ踏襲し、モデルと管理領域は分離する
+- Frontendテストは既存Query Serviceテストと同じFeature配下へ追加する
+- Backendテストは既存Histogram Serviceテストと同じ`mbmmi/histogram/tests/`へ追加する
+- 暫定Hostは既存IntegratedViewerへ専用Featureを接続し、既存Filter Operator連携を変更しない
+
+設計書、既存ソース、モック版の比較により、Histogram単体の実装方針を変更する
+未解決の差分は検出されなかった。Filters／Categoriesは今回のレビュー対象外であり、
+後続Featureの設計時に扱う。

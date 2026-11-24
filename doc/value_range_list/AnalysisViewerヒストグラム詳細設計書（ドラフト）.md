@@ -392,9 +392,12 @@ Rangeを専用Storeで管理し、親FeatureはそこからValueRange条件を�
 AtomへFeature外へ公開する状態は、ResultIdentity、Snapshot参照、および将来他Feature
 が利用する確定済みRange条件など、Feature間で共有する必要があるものに限定する。
 
-## 8. 共通条件と機能別Query
+## 8. 共通条件との接続とHistogram Query
 
-絞り込み条件エリアの条件を統合モデルで表現し、機能ごとのQueryは分離する。
+絞り込み条件エリア全体の共通条件モデル、条件の正本、条件統合、条件論理、
+`defectClass`等の内部表現への変換方針は、共通設計書
+「Analysis Viewer 各種連携 共通条件統合・変換 詳細設計書（ドラフト）.md」を正本とする。
+本書では、Histogram機能がその共通モデルへ接続する方法だけを定義する。
 
 ```text
 DefectFilterConditionSet
@@ -410,15 +413,18 @@ DefectFilterConditionSet
 
 各機能のQuery形式を同一型にする必要はない。
 
-`DefectFilterConditionSet`は、親Featureがフィルター条件・カテゴリ条件・
-ValueRangeFilterListのスライダー条件から統合する。ValueRangeFilterList自身は、
-親Featureが渡した統合条件のうち自分のHistogram取得に必要な条件を使い、行順から
-先行スライダー条件を構成する。
-Providerへは、条件合成済みの`DefectHistogramQuery`を渡し、Providerは条件の所有や
-合成を行わず、Queryを実行するだけとする。
+Categories／Filters／ValueRangeFilterListは、それぞれ自機能の条件だけを公開する。
+親Featureが共通設計書の規則に従って`DefectFilterConditionSet`へ統合し、
+Histogram側へ完成済みの条件を渡す。Histogramは共通条件の正本や全体統合を
+管理せず、受け取った条件から自FeatureのQueryを生成する。
+
+ValueRangeFilterListは、受け取った統合条件のうちHistogram取得に必要な条件を使い、
+行順から`priorSliderConditions`を構成する。Providerへは条件変換済みの
+`DefectHistogramQuery`を渡し、Providerは条件の所有・論理解決・変換を行わず、
+Queryを実行するだけとする。
 
 初期Histogramでは、フィルター条件とカテゴリ条件に選択条件がないため、これらは空条件と
-する。空条件はSnapshotへの追加絞り込みを行わないことを意味し、Histogramの母集団
+して親Featureから渡す。空条件はSnapshotへの追加絞り込みを行わないことを意味し、Histogramの母集団
 はSnapshot作成時に定義された対象Resultの欠陥データ全体となる。Snapshot自体の
 対象範囲や、Snapshot作成時に除外されたデータの扱いを変更するものではない。
 
@@ -988,10 +994,11 @@ DefectHistogramQuery
 └─ conditions: DefectFilterConditionSet
 ```
 
-`conditions`は親Featureがフィルター条件・カテゴリ条件・スライダー条件をANDで
-統合した完成済みの条件集合である。ValueRangeFilterListは、対象行より前の
-ValueRangeFilterItemに設定された有効なスライダー条件を画面上の上から順に抽出し、
-全範囲のSliderを除外したうえで、親Featureの条件統合へ提供する。
+`conditions`は、共通設計書に定義された`DefectFilterConditionSet`を参照する。
+Histogram側は、共通条件の統合・論理解決・`defectClass`への変換を担当しない。
+ValueRangeFilterListは、対象行より前のValueRangeFilterItemに設定された有効な
+スライダー条件を画面上の上から順に抽出し、全範囲のSliderを除外したうえで、
+親Featureへ`sliderConditions`として公開する。
 
 ### 10.2 Provider境界
 
@@ -1420,11 +1427,8 @@ type SliderCondition = {
   upper: number;
 };
 
-type DefectFilterConditionSet = {
-  filterConditions: DefectFilterCondition[];
-  categoryConditions: DefectCategoryCondition[];
-  sliderConditions: SliderCondition[];
-};
+// DefectFilterConditionSetは共通設計書で定義する。
+// Histogram側では、親Featureから受け取る型として参照する。
 
 type ValueRangeFilterItemModel = {
   rowId: string;
@@ -1457,8 +1461,9 @@ type ValueRangeFilterListModel = {
 棒の高さへ、`matchedCount`と`numericValueCount`はHistogram全体の件数情報へ対応する。
 
 `ValueRangeFilterListModel`はList専用Storeが所有する。`DefectFilterConditionSet`は
-別の保存用Modelとして二重保持せず、親Featureがフィルター条件・カテゴリ条件と
-Listのスライダー条件から組み立て、`DefectHistogramQuery`へ渡す。
+ListやHistogram側で二重保持せず、親Featureが共通設計書の規則に従って構成し、
+`DefectHistogramQuery`へ渡す。`conditionVersion`は共通条件変更を識別するための
+世代情報として扱い、共通条件の正本をHistogram側へ複製しない。
 
 `DefectFilterCondition`は、既存Frontendの`GridFilterItem`をそのまま内部状態として
 使用する型ではない。絞り込み条件エリアを親Feature主体で構成できるよう、Frontend内部
@@ -1634,7 +1639,7 @@ Snapshot／Jobで踏襲する事項：
 - `category`：カテゴリ機能で設定された条件またはカテゴリ定義
 - `slider`：ValueRangeFilterListのSliderで設定された条件
 - `condition`：上記の各条件を表すデータ
-- `DefectFilterConditionSet`：絞り込み条件エリア全体の統合条件
+- `DefectFilterConditionSet`：共通設計書で定義される、絞り込み条件エリア全体の統合条件
 
 ValueRangeFilterListのSlider条件は、型名・プロパティ名ともに`SliderCondition`または
 `sliderConditions`を使用し、`ValueRangeCondition`、`rangeCondition`、
